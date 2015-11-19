@@ -2,7 +2,7 @@
 
 <html lang="en">
 <head>
-<title>Web VR boilerplate</title>
+<title>IPVR</title>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 <meta name="mobile-web-app-capable" content="yes">
@@ -18,6 +18,7 @@ body {
   padding: 0;
   overflow: hidden;
 }
+/*#gui { position: absolute; align:center; top: 2px;}*/
 </style>
 </head>
 
@@ -58,12 +59,22 @@ WebVRConfig = {
 <!--
   three.js 3d library
   -->
+
+
 <script src="bower_components/threejs/build/three.js"></script>
+<script src="bower_components/threejs/examples/js/loaders/OBJLoader.js"></script>
+<script src="bower_components/threejs/examples/js/loaders/MTLLoader.js"></script>
+<script src="bower_components/threejs/examples/js/loaders/OBJMTLLoader.js"></script>
+<script src="bower_components/dat.gui/dat.gui.min.js"></script>
+
+<script src="bower_components/jquery-2.1.0.min/index.js"></script>
 
 <!--
   VRControls.js acquires positional information from connected VR devices and applies the transformations to a three.js camera object.
-   -->
+   
 <script src="bower_components/threejs/examples/js/controls/VRControls.js"></script>
+-->
+<script src="bower_components/threejs/examples/js/controls/FirstPersonControls.js"></script>
 
 <!--
   VREffect.js handles stereo camera setup and rendering.
@@ -83,8 +94,11 @@ WebVRConfig = {
 
 <script>
 //Setup three.js WebGL renderer
-var renderer = new THREE.WebGLRenderer({ antialias: true });
+var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
 renderer.setPixelRatio(window.devicePixelRatio);
+
+
+renderer.setClearColor( 0x7ec0ee );
 
 // Append the canvas element created by the renderer to document body element.
 document.body.appendChild(renderer.domElement);
@@ -92,36 +106,29 @@ document.body.appendChild(renderer.domElement);
 // Create a three.js scene.
 var scene = new THREE.Scene();
 
+var light = new THREE.AmbientLight( 0x404040 ); // soft white light
+scene.add( light );
+
 // Create a three.js camera.
 var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
 
 // Apply VR headset positional data to camera.
-var controls = new THREE.VRControls(camera);
+//var controls = new THREE.VRControls(camera);
+
+var camControls = new THREE.FirstPersonControls(camera);
+camControls.lookSpeed = 0.2;
+camControls.movementSpeed = 5;
+camControls.noFly = true;
+camControls.lookVertical = true;
+camControls.constrainVertical = true;
+camControls.verticalMin = 0.2;
+camControls.verticalMax = 3.0;
+camControls.lon = -150;
+camControls.lat = 90;
 
 // Apply VR stereo rendering to renderer.
 var effect = new THREE.VREffect(renderer);
 effect.setSize(window.innerWidth, window.innerHeight);
-
-
-// Add a repeating grid as a skybox.
-var boxWidth = 5;
-var texture = THREE.ImageUtils.loadTexture(
-  'img/box.png'
-);
-texture.wrapS = THREE.RepeatWrapping;
-texture.wrapT = THREE.RepeatWrapping;
-texture.repeat.set(boxWidth, boxWidth);
-
-var geometry = new THREE.BoxGeometry(boxWidth, boxWidth, boxWidth);
-var material = new THREE.MeshBasicMaterial({
-  map: texture,
-  color: 0x01BE00,
-  side: THREE.BackSide
-});
-
-var skybox = new THREE.Mesh(geometry, material);
-scene.add(skybox);
-
 
 // Create a VR manager helper to enter and exit VR mode.
 var manager = new WebVRManager(renderer, effect, {hideButton: false});
@@ -134,16 +141,235 @@ var cube = new THREE.Mesh(geometry, material);
 // Position cube mesh
 cube.position.z = -1;
 
-
+var clock = new THREE.Clock();
 // Add cube mesh to your three.js scene
 scene.add(cube);
+
+var gateway_url = "http://ipfs.io"//"http://localhost:8080";
+//QmVS2MQLrGSLPm488wNCv3Bq2cJ6urtpvM3bo7GuESvhRi
+//var website = "http://localhost:8000/room.html";//
+//HTTP vs HTTPS
+var website = "http://beta.vrsites.com/dad-imaginary/circumference";//"https://beta.vrsites.com/bubsy/bubsy";//"https://beta.vrsites.com/afterxdeath/ktmh-b";//"/ipns/QmRKEq5G3wN66UcBnTyavK2tF8M9Niz6sitabQKKSZLrnX";
+
+// Hash translator -> only use for website
+// Convert to /ipfs/ if file does not end with .obj?
+// relative hashes have to be fully specified
+function ht(hash) {
+  if (hash.indexOf(".")>=0) {
+    return hash;
+  } else if (hash.indexOf("/")==0) {
+    return gateway_url+hash;
+  } else {
+    return gateway_url+"/ipfs/"+hash;
+  }
+}
+
+var FizzyText = function() {
+  this.message = 'dat.gui';
+  this.speed = 0.8;
+  this.displayOutline = false;
+};
+
+var UriText = function() {
+  this.uri = ht(website);
+  this.last = ht(website);
+}
+
+
+var loader = new THREE.OBJMTLLoader();
+
+var text = new FizzyText();
+var gui = new dat.GUI();
+gui.domElement.id = 'gui';
+gui.add(text, 'message');
+gui.add(text, 'speed', -5, 5);
+gui.add(text, 'displayOutline');
+
+
+jQuery.get(ht(website), null, function(data, status, jq) {
+
+  var xml = jQuery.parseHTML(data);
+  console.log(data);
+  room = $(xml).find("FireBoxRoom");
+  console.log(room)  
+  if (room) {
+    var idmap = {};
+    var assetobjects = {};
+    //consider that objects could change after they are loaded.
+    //listen for DOM changes. almost a browser task, heh
+
+    function alignAxis(mesh, vector) {
+      var axis = new THREE.Vector3(0, 1, 0);
+      mesh.quaternion.setFromUnitVectors(axis, vector.clone().normalize());
+    }
+
+    function str2vec(str) {
+      var spl = str.split(" ");
+      return new THREE.Vector3(parseFloat(spl[0]), parseFloat(spl[1]), parseFloat(spl[2]));
+    }
+
+    function str2col(str) {
+      var spl = str.split(" ").slice(0,3);
+      return "rgb("+spl.join(",")+")";
+    }
+
+    var room_visible = $(room).attr("fog")==null ? true : Boolean($(room).attr("fog"));
+    if (room_visible) {
+
+      var room_color = $(room).attr("color")==null ? "1 1 1" : $(room).attr("color");
+
+      // Add a repeating grid as a skybox.
+      var boxWidth = 300;
+      var texture = THREE.ImageUtils.loadTexture(
+        'img/box.png'
+      );
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.repeat.set(boxWidth, boxWidth);
+
+
+      var geometry = new THREE.PlaneGeometry(boxWidth, boxWidth);
+      var material = new THREE.MeshBasicMaterial({
+        map: texture,
+        color: str2col(room_color),
+        side: THREE.BackSide
+      });
+
+      var skybox = new THREE.Mesh(geometry, material);
+      skybox.position.y = 0;
+      skybox.rotation.setFromVector3(new THREE.Vector3(1.57,0,1.57));
+      scene.add(skybox);
+    }
+
+    var room_pos = $(room).attr("pos")==null ? "0 0 0" : $(room).attr("pos");
+    var room_fwd = $(room).attr("fwd")==null ? "0 0 -1" : $(room).attr("fwd");
+    var pos = room_pos.split(" ");
+    camera.position.set(parseFloat(pos[0]), parseFloat(pos[1]), parseFloat(pos[2]));
+    alignAxis(camera, str2vec(room_fwd));
+
+    var room_fog = Boolean($(room).attr("fog"));
+    if (room_fog) {
+      var room_fog_color = $(room).attr("fog_color");
+      if (room_fog_color==null) {
+        room_fog_color = "rgb(0,0,0)";
+      } else {
+        //validate otherwise? -> soft spec fork, allow any css style string
+        //but: default <int> <int> <int> is the easiest way
+        room_fog_color = str2col(room_fog_color);
+      }
+      var room_fog_mode = $(room).attr("fog_mode");
+      if (room_fog_mode=="linear") {
+        var room_fog_start = $(room).attr("fog_start")==null ? 0 : parseFloat($(room).attr("fog_start"));
+        //default:1000?
+        var room_fog_end = $(room).attr("fog_end")==null ? 1 : parseFloat($(room).attr("fog_end"));
+        scene.fog = new THREE.fog(room_fog_color, room_fog_start, room_fog_end);
+      } else if (room_fog_mode==null || room_fog_mode=="exp") {
+        var room_fog_density = $(room).attr("fog_density")==null ? 1 : parseFloat($(room).attr("fog_density"));
+        scene.fog = new THREE.fogexp2(room_fog_color, room_fog_density);
+      } else {
+        console.log("[WARNING] Invalid fog mode");
+      }
+    }
+
+    $(room).find("AssetObject").each(function() {
+
+      var hash = $(this).attr("src");
+      if (hash) {
+        idmap[$(this).attr("id")] = $(this);
+      } else {
+        console.log("[WARNING] AssetObject has no src");
+      }
+    });
+
+    function addObject(object, pos="0 0 0") {
+      //convert string pos to list
+      pos = pos.split(" ");
+      object.position.set(parseFloat(pos[0]), parseFloat(pos[1]), parseFloat(pos[2]));
+      scene.add(object);
+    }
+
+    $(room).find("Object").each(function() {
+      var pos = $(this).attr("pos");
+      var assetnode = idmap[$(this).attr("id")];
+      var hashobj = assetnode.attr("src");
+      var hashmtl = assetnode.attr("mtl");
+      if (hashobj) {
+        console.log("HASHES",hashobj, hashmtl);
+        if (!assetobjects[assetnode]) {
+          //This may happen multiple times if loading takes too long
+          loader.load(ht(hashobj), ht(hashmtl), function(object) {
+            assetobjects[assetnode] = object;
+            addObject(object.clone(), pos);
+          },
+          function(o) {},
+          function (error) {console.error(error);});
+        } else {
+          addObject(assetobjects[assetnode].clone(), pos);
+        }
+      } else {
+        console.log("[WARNING] Object has no id nor hash");
+      }
+    });
+
+    $(room).find("Link").each(function() {
+      var geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+      var material = new THREE.MeshNormalMaterial();
+      var cube = new THREE.Mesh(geometry, material);
+      addObject(cube, $(this).attr("pos"));
+    });
+
+    $(room).find("Text").each(function() {
+
+
+      var canvas = document.createElement('canvas');
+      canvas.width = 1000;
+      canvas.height = 1000;
+
+
+      var context = canvas1.getContext('2d');
+      context.font = "Bold 400px Helvetica";
+      context.fillStyle = "rgba(255,0,0,0.95)";
+      context.fillText($(this).innerHTML, 0, 300);
+
+
+      var texture = new THREE.Texture(canvas)
+      texture.needsUpdate = true;
+
+      var geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+      var material = new THREE.MeshBasicMaterial( {
+        map: texture1, side:THREE.DoubleSide
+      } );
+
+      var cube = new THREE.Mesh(geometry, material);
+      addObject(cube, $(this).attr("pos"));
+    });
+
+  } else {
+    console.log("[WARNING] No room found.");
+  }
+});
+
+uritext = gui.add(new UriText(), 'uri');
+// This is dumb. How to listen for a specific event? (enter key)
+uritext.onFinishChange(function(uri) {
+
+});
+
+
+
+
+
+
+
+
 // Request animation frame loop function
 function animate(timestamp) {
   // Apply rotation to cube mesh
-  cube.rotation.y += 0.01;
+  cube.rotation.x += 0.001;
+  cube.rotation.y += 0.001;
 
   // Update VR headset position and apply to camera.
-  controls.update();
+  camControls.update(clock.getDelta());
 
   // Render the scene through the manager.
   manager.render(scene, camera, timestamp);
