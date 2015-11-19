@@ -29,6 +29,7 @@ THREE.OBJMTLLoader.prototype = {
 
 			var loader = new THREE.XHRLoader( scope.manager );
 			loader.setCrossOrigin( scope.crossOrigin );
+			loader.setResponseType("text");
 			loader.load( url, function ( text ) {
 
 				var object = scope.parse( text );

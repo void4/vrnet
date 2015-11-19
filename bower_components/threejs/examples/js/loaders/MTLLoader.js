@@ -20,6 +20,7 @@ THREE.MTLLoader.prototype = {
 
 		var loader = new THREE.XHRLoader( this.manager );
 		loader.setCrossOrigin( this.crossOrigin );
+		loader.setResponseType("text");
 		loader.load( url, function ( text ) {
 
 			onLoad( scope.parse( text ) );
